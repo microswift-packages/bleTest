@@ -1,0 +1,10 @@
+files:
+- main.swift
+- BLE.cpp
+- BLE.h
+- BluefruitConfig.h
+- main.h
+- Package.swift
+settings:
+  MISSING_RUNTIME_SHOW_WARNING: 'yes'
+  INCLUDE_PRINTF_FLT: 'no'

@@ -1,0 +1,25 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "Adafruit_BLE",
+        "repositoryURL": "/Users/carlpeto/Documents/Code/Adafruit_BLE",
+        "state": {
+          "branch": "spm-experiment",
+          "revision": "572db1c74aaa304fc70e84d419e5ebc22cb3bee1",
+          "version": null
+        }
+      },
+      {
+        "package": "Arduino",
+        "repositoryURL": "/Users/carlpeto/Documents/Code/Arduino",
+        "state": {
+          "branch": "main",
+          "revision": "7c14b21339a444982232ef143effe4c183b34e98",
+          "version": null
+        }
+      }
+    ]
+  },
+  "version": 1
+}
