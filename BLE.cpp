@@ -7,6 +7,10 @@
 #include "Adafruit_BluefruitLE_SPI.h"
 #include "Adafruit_BluefruitLE_UART.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define BLUEFRUIT_HWSERIAL_NAME Serial
 #define BLUEFRUIT_UART_MODE_PIN -1
 #define VERBOSE_MODE false
@@ -30,3 +34,7 @@ void sendBLE() {
 void readBLE() {
     ble.read();
 }
+
+#ifdef __cplusplus
+} // extern "C"
+#endif

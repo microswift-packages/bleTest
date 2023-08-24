@@ -2,3 +2,7 @@
 .project
 build
 .pcm
+packages-c-includes-list.txt
+packages-list.txt
+packages-swift-includes-list.txt
+packages-link-opts.txt

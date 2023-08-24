@@ -2,21 +2,21 @@
   "object": {
     "pins": [
       {
-        "package": "Adafruit_BLE",
-        "repositoryURL": "/Users/carlpeto/Documents/Code/Adafruit_BLE",
+        "package": "Adafruit_BluefruitLE_nRF51",
+        "repositoryURL": "https://github.com/microswift-packages/Adafruit_BluefruitLE_nRF51",
         "state": {
-          "branch": "spm-experiment",
-          "revision": "572db1c74aaa304fc70e84d419e5ebc22cb3bee1",
-          "version": null
+          "branch": null,
+          "revision": "ee6aebb3ecbc03800a6e09c778d8a9eddf7d0146",
+          "version": "1.0.1"
         }
       },
       {
         "package": "Arduino",
-        "repositoryURL": "/Users/carlpeto/Documents/Code/Arduino",
+        "repositoryURL": "https://github.com/microswift-packages/Arduino",
         "state": {
-          "branch": "main",
-          "revision": "7c14b21339a444982232ef143effe4c183b34e98",
-          "version": null
+          "branch": null,
+          "revision": "4e7e4cb99be518ceec0cb4198ba9a9a825b413d6",
+          "version": "1.0.0"
         }
       }
     ]

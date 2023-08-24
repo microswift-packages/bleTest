@@ -48,15 +48,25 @@
 # define DEBUGMAKE=true or false to enable/disable debug on make actions
 # define ADDITIONAL_C_FILES, ADDITIONAL_CPP_FILES and ADDITIONAL_ASM_FILES to include other C or C++ or assembly files to be built.
 
+# Get the current makefile full path
+mkfile_full_path := $(abspath $(lastword $(MAKEFILE_LIST)))
+mkfile_dir := $(patsubst %/,%,$(dir $(mkfile_full_path)))
+MAKEFILE_COMPLETE := $(mkfile_full_path)
+
+$(info mkfile_full_path:$(mkfile_full_path))
+$(info mkfile_dir:$(mkfile_dir))
+$(info MAKEFILE_COMPLETE:$(MAKEFILE_COMPLETE))
+
+
 # expansion points created by IDE (mostly used in folder projects/command line... usually passed in environment for bundle projects)
-SETTINGS_FOLDER = .project
--include $(SETTINGS_FOLDER)/paths.include
--include $(SETTINGS_FOLDER)/board.include
--include $(SETTINGS_FOLDER)/settings.include
+SETTINGS_FOLDER = $(mkfile_dir)/.project
+include $(SETTINGS_FOLDER)/paths.include
+include $(SETTINGS_FOLDER)/board.include
+include $(SETTINGS_FOLDER)/settings.include
 
 # this expansion point is dynamically created from the project manifest on both folder and bundle projects
 # marked as non optional because the build depends on it now, and it should always create
--include $(SETTINGS_FOLDER)/project.include
+include $(SETTINGS_FOLDER)/project.include
 
 ######
 # Architecture specific
@@ -391,7 +401,7 @@ C_TO_IL_OPTS ?= -S -emit-llvm
 
 CLANG_INCLUDE_DIRS ?= $(ARCH_CLANG_INCLUDES) $(ARDUINO_LIB_CLANG_OPTIONS)
 CLANG_OPTS ?= -fmodules -std=c99 -O3 $(CLANG_INCLUDE_DIRS) $(ARCH_DEFINES) $(TARGET_OPTS) $(ARCH_CLANG_OPTS) $(C_PACKAGES_OPTS) $(MODULE_INCLUDE_DIRECTORIES)
-CLANG_PP_OPTS ?= -fmodules -fcxx-modules -fmodules-cache-path=pcm -std=c++11 -fno-rtti -O3 \
+CLANG_PP_OPTS ?= -fmodules -fcxx-modules -fmodules-cache-path=.pcm -std=c++11 -fno-rtti -fno-use-cxa-atexit -O3 \
 $(CLANG_INCLUDE_DIRS) $(ARCH_DEFINES) $(TARGET_OPTS) \
 $(ARCH_CLANG_OPTS) $(C_PACKAGES_OPTS) $(MODULE_INCLUDE_DIRECTORIES) $(CPP_EXTRA_IMPORTS) $(CPP_EXTRA_DEFINES)
 
@@ -411,7 +421,7 @@ C_TO_IL ?= "$(CLANG)" $(TARGET_OPTS) $(C_TO_IL_OPTS)
 
 #https://modocache.io/reading-and-understanding-the-swift-driver-source-code
 
-ifneq ($AVRDUDE_ONLY_ACTION,yes)
+ifneq ($(AVRDUDE_ONLY_ACTION),yes)
 OTHER_SWIFT_FILE=$(OTHER_SWIFT_FILES)
 endif
 
@@ -487,10 +497,10 @@ else
 # we assume EXPORT_MODULE_PATH must be set, or it is an error
 .PHONY: $(EXPORT_MODULE_PATH)
 ifneq ($(EXPORT_MODULE_PATH),)
-ALL_TARGETS := clean_buildlog packages $(EXPORT_MODULE_PATH)
+ALL_TARGETS := clean_buildlog $(EXPORT_MODULE_PATH)
 else
 # unexpected fallback, for a build with no export directory, just build the module binaries
-ALL_TARGETS := packages $(MODULE_OUTPUT_FILES) $(FULL_BUILD_PATH)lib$(MODULE_NAME).a
+ALL_TARGETS := $(MODULE_OUTPUT_FILES) $(FULL_BUILD_PATH)lib$(MODULE_NAME).a
 endif
 # modules do not use main.swift, it is a compilation error
 MAIN_SWIFT_FILE =
@@ -577,6 +587,7 @@ endif
 
 clean:
 	-rm -rf $(CLEAN_PATH) 2> /dev/null
+	-rm packages-c-includes-list.txt packages-link-opts.txt packages-list.txt packages-swift-includes-list.txt
 	echo "Cleaned Files"
 
 clean_buildlog:
@@ -595,8 +606,29 @@ ifeq ($(PACKAGE_DIR),)
 $(error You must set PACKAGE_DIR)
 endif
 
+# This directory holds special config needed by our build system, e.g. dummy files and any overridden Makefile.
+PACKAGE_CONFIG_DIR = microswift
+PACKAGE_CONFIG_MAKEFILE = Makefile
 
-PACKAGE_SUBDIRS = $(sort $(basename $(dir $(wildcard $(PACKAGE_MODULES_DIR)/*/))))
+ .INTERMEDIATE : packages-list.txt packages-swift-includes-list.txt
+ .INTERMEDIATE : packages-c-includes-list.txt packages-link-opts.txt
+
+packages-list.txt:
+	swift package show-dependencies --format flatlist 2> /dev/null |tail -100 -r > $@
+
+packages-swift-includes-list.txt: packages-list.txt
+	sed -Ee 's/(.*)/-I$(subst /,\/,$(PWD)/$(PACKAGE_MODULES_DIR))\/\1/' $<|tr '\n' ' '|tr '\r' ' '> $@
+
+packages-c-includes-list.txt: packages-list.txt
+	sed -Ee 's/(.*)/-I$(subst /,\/,$(PWD)/$(PACKAGE_MODULES_DIR))\/\1/' $<|tr '\n' ' '|tr '\r' ' '> $@
+
+packages-link-opts.txt: packages-list.txt
+	sed -Ee 's/(.*)/-L$(subst /,\/,$(PWD)/$(PACKAGE_MODULES_DIR))\/\1\/bin -l\1/' $<|tr '\n' ' '|tr '\r' ' '> $@
+
+# SWIFTC_PACKAGES_OPTS = $($(shell cat packages-list.txt):%=-I%)
+# C_PACKAGES_OPTS = $($(shell cat packages-list.txt):%=-I%)
+# LINK_PACKAGES_OPTS = $($(shell cat packages-list.txt):%=-L%/bin)
+# LINK_PACKAGE_LIBRARIES = $($(shell cat packages-list.txt):%=-l%)
 
 packages-clean:
 	-rm -rf $(PACKAGE_DIR)
@@ -605,8 +637,16 @@ packages-clean:
 packages-update:
 	swift package update
 
-packages-build:
-	for i in $(PACKAGE_SUBDIRS); do echo Making $$i;make -C $$i; done
+packages-build: packages-list.txt packages-swift-includes-list.txt packages-c-includes-list.txt
+	for i in $$(cat $<); do echo Making $$i;\
+	  export SWIFTC_PACKAGES_OPTS="$$(cat packages-swift-includes-list.txt)";\
+	  export C_PACKAGES_OPTS="$$(cat packages-c-includes-list.txt)";\
+	  echo $$SWIFTC_PACKAGES_OPTS;\
+	  if [ -f $(PACKAGE_MODULES_DIR)/$$i/$(PACKAGE_CONFIG_DIR)/$(PACKAGE_CONFIG_MAKEFILE) ];\
+	  then $(MAKE) -C $(PACKAGE_MODULES_DIR)/$$i -f $(PACKAGE_CONFIG_DIR)/$(PACKAGE_CONFIG_MAKEFILE);\
+	  else $(MAKE) -C $(PACKAGE_MODULES_DIR)/$$i -f $(MAKEFILE_COMPLETE);\
+	  fi;\
+	done
 
 packages: packages-update packages-build
 
@@ -614,9 +654,7 @@ packages: packages-update packages-build
 # put the output XXX.swiftmodule directory in the top level
 # put object files and static libraries in the bin/ subdirectory of the package
 # clean must remove that directory and XXX.swiftmodule
-SWIFTC_PACKAGES_OPTS = $(PACKAGE_SUBDIRS:%=-I%)
-C_PACKAGES_OPTS = $(PACKAGE_SUBDIRS:%=-I%)
-LINK_PACKAGES_OPTS = $(PACKAGE_SUBDIRS:%=-L%/bin)
+
 
 endif
 
@@ -630,10 +668,10 @@ $(OUTPUT_MAP_FILE): $(ALL_SWIFT_FILES) $(FULL_BUILD_PATH)
 
 # *** SWIFT INTERMEDIATES RULES ***
 
-$(ALL_SWIFT_INTERMEDIATES) : $(ALL_SWIFT_FILES) $(ELF_DEPS) $(OUTPUT_MAP_FILE)
-	echo "PACKAGE_SUBDIRS: $(PACKAGE_SUBDIRS)"
-	echo "SWIFTC_PACKAGES_OPTS: $(SWIFTC_PACKAGES_OPTS)"
-	set -o pipefail && $(SWIFT_TO_BC) -module-name $(MODULE_NAME) -whole-module-optimization \
+$(ALL_SWIFT_INTERMEDIATES) : $(ALL_SWIFT_FILES) $(ELF_DEPS) $(OUTPUT_MAP_FILE) packages-swift-includes-list.txt
+	echo "PACKAGE_SUBDIRS: $$(cat packages-list.txt)"
+	echo "SWIFTC_PACKAGES_OPTS: $$(cat packages-swift-includes-list.txt)"
+	set -o pipefail && $(SWIFT_TO_BC) $$(cat packages-swift-includes-list.txt) -module-name $(MODULE_NAME) -whole-module-optimization \
 	 -num-threads 4 -output-file-map $(OUTPUT_MAP_FILE) $(ALL_SWIFT_FILES) $(APPEND_BUILD_LOG)
 	@echo Emitted $(ALL_SWIFT_INTERMEDIATES)
 
@@ -668,12 +706,12 @@ $(ALL_SWIFT_CSIL) : $(ALL_SWIFT_FILES) $(ELF_DEPS) $(OUTPUT_MAP_FILE)
 # into output files in just the build directory. If the user had A.swift in multiple places this *will* break the build,
 # and the same for other source files, .c, .cpp. A more accurate build would map A.swift to build/A.bc and DIR/A.swift to
 # build/DIR/A.bc, but we are avoiding that complication for now, so we are hacking the build targeting instead.
-$(ALL_CPP_INTERMEDIATES) : $(ALL_CPP_FILES)
-	$(CLANG_PP) -emit-llvm -MMD -MF$(patsubst %,$(FULL_BUILD_PATH)%,$(notdir $(<:%.cpp=%.cpp.d))) -c $(EXTRA_CPP_PARAMS) -o $(patsubst %,$(FULL_BUILD_PATH)%,$(notdir $(<:%.cpp=%.cpp.bc))) $<
+$(ALL_CPP_INTERMEDIATES) : $(ALL_CPP_FILES) packages-c-includes-list.txt
+	$(CLANG_PP) $$(cat packages-c-includes-list.txt) -emit-llvm -MMD -MF$(patsubst %,$(FULL_BUILD_PATH)%,$(notdir $(<:%.cpp=%.cpp.d))) -c $(EXTRA_CPP_PARAMS) -o $(patsubst %,$(FULL_BUILD_PATH)%,$(notdir $(<:%.cpp=%.cpp.bc))) $<
 	echo "Emitted $(notdir $(<:%.cpp=%.cpp.bc))"
 
-$(ALL_C_INTERMEDIATES) : $(ALL_C_FILES)
-	$(CLANG) -emit-llvm -MMD -MF$(patsubst %,$(FULL_BUILD_PATH)%,$(notdir $(<:%.c=%.c.d))) -c $(EXTRA_C_PARAMS) -o $(patsubst %,$(FULL_BUILD_PATH)%,$(notdir $(<:%.c=%.c.bc))) $<
+$(ALL_C_INTERMEDIATES) : $(ALL_C_FILES) packages-c-includes-list.txt
+	$(CLANG) $$(cat packages-c-includes-list.txt) -emit-llvm -MMD -MF$(patsubst %,$(FULL_BUILD_PATH)%,$(notdir $(<:%.c=%.c.d))) -c $(EXTRA_C_PARAMS) -o $(patsubst %,$(FULL_BUILD_PATH)%,$(notdir $(<:%.c=%.c.bc))) $<
 	echo "Emitted $(notdir $(<:%.c=%.c.bc))"
 
 
@@ -686,10 +724,10 @@ ifeq ($(BUILD_MODULE_NAMED),)
 
 # The rule for the "most important" target... the executable
 # note, this doesn't apply when building a module
-$(ELF_FILE) $(ELF_LINKER_OUTPUT_FILE) : $(FULL_BUILD_PATH) $(ALL_SWIFT_OBJECTS) $(ALL_C_OBJECTS) $(ALL_CPP_OBJECTS) $(ALL_ASM_OBJECTS) $(ELF_DEPS) $(AUTOLINK_FILE)
+$(ELF_FILE) $(ELF_LINKER_OUTPUT_FILE) : $(FULL_BUILD_PATH) $(ALL_SWIFT_OBJECTS) $(ALL_C_OBJECTS) $(ALL_CPP_OBJECTS) $(ALL_ASM_OBJECTS) $(ELF_DEPS) $(AUTOLINK_FILE) packages-link-opts.txt
 	@echo $(ELF_BUILD_STATUS)
 	$(LD) -o $(ELF_FILE) $(ALL_SWIFT_OBJECTS) $(ALL_C_OBJECTS) $(ALL_CPP_OBJECTS) $(ALL_ASM_OBJECTS) $(TEXT_SECTION_SIZE) $(DATA_SECTION_SIZE) $(MISSING_RUNTIME_STUB) \
-	$(shell cat $(AUTOLINK_FILE)) $(LINK_PACKAGES_OPTS) $(LINK_LIBRARIES) $(ARCH_LD_END) 2>&1 > $(ELF_LINKER_OUTPUT_FILE) || (echo "**LINKING FAILED**" && exit -99)
+	$(shell cat $(AUTOLINK_FILE)) $(shell cat packages-link-opts.txt) $(LINK_PACKAGES_OPTS) $(LINK_PACKAGE_LIBRARIES) $(LINK_LIBRARIES) $(ARCH_LD_END) 2>&1 > $(ELF_LINKER_OUTPUT_FILE) || (echo "**LINKING FAILED**" && exit -99)
 	echo "Linked $(ELF_FILE)"
 
 else
@@ -949,5 +987,3 @@ else
 upload-%.bin: $(FULL_BUILD_PATH)%.bin reopen
 	@echo "*** Cannot find a suitable board. Do you need to put your Arduino into programming mode? ***"
 endif
-
-# frak off pirate :)

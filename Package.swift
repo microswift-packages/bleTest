@@ -5,17 +5,17 @@ import PackageDescription
 let package = Package(
     name: "bleTest",
     products: [
-        .library(
+        .executable(
             name: "bleTest",
             targets: ["bleTest"]),
     ],
     dependencies: [
-        .package(url: "file:///Users/carlpeto/Documents/Code/Adafruit_BLE", .branch("spm-experiment")),
+        .package(url: "https://github.com/microswift-packages/Adafruit_BluefruitLE_nRF51", from: "1.0.0"),
     ],
     targets: [
         .target(
             name: "bleTest",
-            dependencies: ["Adafruit_BLE"],
+            dependencies: ["Adafruit_BluefruitLE_nRF51"],
             path: ".",
             sources: ["main.swift"]),
     ]
